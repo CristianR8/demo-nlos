@@ -1,0 +1,8 @@
+# Large model checkpoints and generated measurement data
+code/pth/
+code/middlebury/processed/*.mat
+code/captured/*.mat
+
+# Python-generated cache files
+__pycache__/
+*.py[cod]
