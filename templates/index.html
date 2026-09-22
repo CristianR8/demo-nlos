@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071117">
+  <title>Transient · Juego de reconocimiento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <main id="app">
+    <section id="start-screen" class="start-screen">
+      <div class="brand-pill"><span></span> Clasificación temporal · Sesión activa</div>
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">RECONOCIMIENTO DE IMÁGENES TRANSITORIAS</p>
+          <h1>Identifica<br><em>la imagen.</em></h1>
+          <p class="hero-text">Observa cada secuencia transitoria, analiza cómo cambia la imagen con el tiempo y selecciona el objeto correcto.</p>
+          <button id="start-button" class="primary-button">Iniciar juego <span>→</span></button>
+          <div class="hero-stats">
+            <div><strong>05</strong><span>rondas</span></div>
+            <div><strong>03</strong><span>niveles</span></div>
+            <div><strong>100</strong><span>pts / acierto</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="game-screen" class="game-screen hidden">
+      <header class="game-header">
+        <a class="logo" href="#" id="logo-home"><span class="logo-mark">T</span><span>Transient<small>image challenge</small></span></a>
+        <div class="mission-progress"><span id="progress-label">RONDA 01</span><div class="progress-track"><i id="progress-bar"></i></div></div>
+        <div class="hud-stat"><span>PUNTAJE</span><strong id="score">0000</strong></div>
+        <div class="hud-stat"><span>RACHA</span><strong id="streak">×0</strong></div>
+      </header>
+
+      <div class="game-layout">
+        <section class="scanner-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">SECUENCIA TEMPORAL</p><h2>Imagen transitoria</h2></div>
+            <div class="live-indicator"><i></i> SEÑAL ACTIVA</div>
+          </div>
+          <div class="scanner-frame">
+            <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+            <div class="scan-line"></div>
+            <img id="transient-image" alt="Animación de la imagen transitoria">
+            <div class="axis axis-y">INTENSIDAD</div><div class="axis axis-x">TIEMPO DE VUELO →</div>
+            <button id="reload-gif" class="icon-button" title="Reiniciar animación" aria-label="Reiniciar animación">↻</button>
+          </div>
+          <div class="scanner-footer">
+            <div class="signal-data"><span>FORMATO</span><b>SECUENCIA GIF</b></div>
+            <div class="signal-data"><span>ESTADO</span><b class="cyan">REPRODUCIENDO</b></div>
+            <div class="difficulty" role="group" aria-label="Nivel de dificultad">
+              <button data-level="Fácil">Fácil</button><button data-level="Medio" class="active">Medio</button><button data-level="Difícil">Difícil</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="answer-panel">
+          <div class="round-chip">RONDA <strong id="round-number">01</strong></div>
+          <p class="eyebrow">TU HIPÓTESIS</p>
+          <h2>¿Qué objeto aparece?</h2>
+          <p class="answer-help">Observa cómo cambia la imagen en el tiempo y elige una opción.</p>
+          <div id="choices" class="choices"></div>
+          <button id="submit-answer" class="primary-button submit-button" disabled>Confirmar respuesta <span>⌁</span></button>
+          <button id="hint-button" class="hint-button"><span>✦</span> Solicitar pista</button>
+          <p id="hint-text" class="hint-text hidden"></p>
+          <p class="keyboard-tip"><kbd>1</kbd>—<kbd>4</kbd> para elegir · <kbd>Enter</kbd> para confirmar</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="result-overlay" class="result-overlay hidden" aria-live="polite">
+      <div class="result-card">
+        <button id="close-result" class="close-button" aria-label="Cerrar">×</button>
+        <div id="result-icon" class="result-icon">✓</div>
+        <p id="result-kicker" class="eyebrow">LECTURA CONFIRMADA</p>
+        <h2 id="result-title">¡Imagen identificada!</h2>
+        <p id="result-copy"></p>
+        <div id="reconstruction-grid" class="reconstruction-grid"></div>
+        <div class="points-row"><span>PUNTOS OBTENIDOS</span><strong id="earned-points">+100</strong></div>
+        <button id="next-button" class="primary-button">Siguiente señal <span>→</span></button>
+      </div>
+    </section>
+
+    <section id="end-overlay" class="result-overlay hidden" aria-live="polite">
+      <div class="result-card end-card">
+        <div class="result-icon">★</div>
+        <p class="eyebrow">PARTIDA COMPLETADA</p>
+        <h2>Resultado final</h2>
+        <p>Terminaste las cinco rondas.</p>
+        <div class="final-score"><span>PUNTAJE ALCANZADO</span><strong id="final-score">0000</strong></div>
+        <div class="final-detail"><span>Aciertos</span><strong id="final-correct">0 / 5</strong></div>
+        <button id="restart-button" class="primary-button">Jugar de nuevo <span>↻</span></button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </main>
+  <script src="{{ url_for('static', filename='game.js') }}" defer></script>
+</body>
+</html>

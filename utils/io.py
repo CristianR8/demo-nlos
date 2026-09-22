@@ -25,9 +25,12 @@ FRONT_VIEW_INDEX = 24
 H5_LABELS = {
     "scene_1": "Rana",
     "scene_10": "Venado",
+    "scene_13": "Botella",
     "scene_24": "León",
+    "scene_28": "Bailarina",
     "scene_30": "Carro",
 }
+EXCLUDED_PREPROCESSED_SCENES = {"scene_23"}
 PREPROCESSED_DIRNAME = "preprocessed"
 
 
@@ -272,9 +275,30 @@ def _discover_preprocessed_dataset(root: Path) -> list[dict]:
     if not artifact_dirs:
         return []
 
-    labels = [H5_LABELS.get(path.name, path.name.replace("_", " ")) for path in artifact_dirs]
+    # Merely existing is not enough: an interrupted/invalid preprocessing run can
+    # leave valid image files whose pixels are all black (scene_12 was one such
+    # case).  Do not offer those scenes to the player because both the transient
+    # and the reconstruction would appear empty.
+    playable_dirs = []
+    for artifact_dir in artifact_dirs:
+        if artifact_dir.name in EXCLUDED_PREPROCESSED_SCENES:
+            continue
+        transient_path = artifact_dir / "transient.gif"
+        integrated_path = artifact_dir / "integrated.png"
+        integrated_rgb_path = artifact_dir / "integrated_rgb.png"
+        if not transient_path.exists():
+            continue
+        if not any(
+            _image_has_visible_signal(path)
+            for path in (integrated_path, integrated_rgb_path)
+            if path.exists()
+        ):
+            continue
+        playable_dirs.append(artifact_dir)
+
+    labels = [H5_LABELS.get(path.name, path.name.replace("_", " ")) for path in playable_dirs]
     scenes = []
-    for artifact_dir, label in zip(artifact_dirs, labels):
+    for artifact_dir, label in zip(playable_dirs, labels):
         transient_gifs = {
             "Fácil": artifact_dir / "transient_facil.gif",
             "Medio": artifact_dir / "transient.gif",
@@ -311,6 +335,17 @@ def _discover_preprocessed_dataset(root: Path) -> list[dict]:
             }
         )
     return scenes
+
+
+def _image_has_visible_signal(path: Path) -> bool:
+    """Return whether a precomputed still contains non-uniform visible data."""
+    try:
+        with Image.open(path) as image:
+            extrema = image.convert("RGB").getextrema()
+    except (OSError, ValueError):
+        return False
+
+    return any(high > low for low, high in extrema) and any(high > 0 for _, high in extrema)
 
 
 def _natural_sort_key(value: str) -> list[object]:
