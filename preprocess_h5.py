@@ -28,8 +28,13 @@ GIF_FRAME_STEPS = {
 }
 
 
-def preprocess_scene(h5_path: Path, target_frames: int, force: bool) -> None:
-    output_dir = h5_path.parent / PREPROCESSED_DIRNAME / h5_path.stem
+def preprocess_scene(
+    h5_path: Path,
+    target_frames: int,
+    force: bool,
+    output_root: Path | None = None,
+) -> None:
+    output_dir = (output_root or h5_path.parent) / PREPROCESSED_DIRNAME / h5_path.stem
     gif_paths = {
         "facil": output_dir / "transient_facil.gif",
         "medio": output_dir / "transient.gif",
@@ -100,6 +105,12 @@ def main() -> None:
         help="Carpeta HDF5. Sin esta opción se revisan ./scenes y ./data.",
     )
     parser.add_argument("--target-frames", type=int, default=300)
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=None,
+        help="Raíz donde se crea preprocessed/. Por defecto se usa la carpeta de cada HDF5.",
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
@@ -111,7 +122,12 @@ def main() -> None:
         raise SystemExit("--target-frames debe ser mayor que cero")
 
     for path in paths:
-        preprocess_scene(path, target_frames=args.target_frames, force=args.force)
+        preprocess_scene(
+            path,
+            target_frames=args.target_frames,
+            force=args.force,
+            output_root=args.output_root,
+        )
 
 
 if __name__ == "__main__":

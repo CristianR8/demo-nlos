@@ -29,6 +29,8 @@ H5_LABELS = {
     "scene_24": "León",
     "scene_28": "Bailarina",
     "scene_30": "Carro",
+    "scene_31": "Logo del Semillero",
+    "scene_34": "Mario Bros",
 }
 EXCLUDED_PREPROCESSED_SCENES = {"scene_23"}
 PREPROCESSED_DIRNAME = "preprocessed"
