@@ -2,6 +2,8 @@
 code/pth/
 code/middlebury/processed/*.mat
 code/captured/*.mat
+*.h5
+*.h5.kaggle-partial
 
 # Python-generated cache files
 __pycache__/

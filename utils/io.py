@@ -10,12 +10,25 @@ from PIL import Image, ImageSequence
 from scipy.io import loadmat
 
 try:
+    import h5py
+except ImportError:  # pragma: no cover - reported when an HDF5 scene is opened
+    h5py = None
+
+try:
     from matplotlib import colormaps
 except Exception:  # pragma: no cover - fallback for minimal environments
     colormaps = None
 
 
 REQUIRED_FILES = ["transient.gif", "recon.gif", "meta.json"]
+FRONT_VIEW_INDEX = 24
+H5_LABELS = {
+    "scene_1": "Rana",
+    "scene_10": "Venado",
+    "scene_24": "León",
+    "scene_30": "Carro",
+}
+PREPROCESSED_DIRNAME = "preprocessed"
 
 
 def list_scene_dirs(data_dir: Path) -> list[Path]:
@@ -34,7 +47,17 @@ def load_meta(scene_dir: Path) -> dict:
 
 
 def discover_game_scenes(data_dir: Path) -> list[dict]:
-    """Discover playable scenes from real dataset first, then fallback format."""
+    """Discover playable scenes from precomputed artifacts, then fallback formats."""
+    preprocessed_scenes = [
+        *_discover_preprocessed_dataset(data_dir.parent / "scenes"),
+        *_discover_preprocessed_dataset(data_dir),
+    ]
+    if preprocessed_scenes:
+        choices = [scene["label"] for scene in preprocessed_scenes]
+        for scene in preprocessed_scenes:
+            scene["choices"] = choices
+        return preprocessed_scenes
+
     real_scenes = _discover_real_dataset(data_dir / "scenes")
     if real_scenes:
         return real_scenes
@@ -72,7 +95,10 @@ def get_transient_gif_bytes(
     upscale: int = 1,
 ) -> bytes:
     """Return transient GIF bytes optionally reduced/noisy for gameplay."""
-    if transient_type == "mat":
+    if transient_type == "h5":
+        vol = _load_h5_front_volume(transient_path, target_frames=300)
+        frames = _volume_to_frames(vol)
+    elif transient_type == "mat":
         frames = _load_mat_transient_frames(transient_path, target_frames=300)
     else:
         with Image.open(transient_path) as img:
@@ -121,7 +147,11 @@ def get_integrated_image(
     noise_level: float = 0.0,
 ) -> Image.Image:
     """Average all transient frames to produce a single integrated measurement."""
-    if transient_type == "mat":
+    if transient_type == "h5":
+        vol = _load_h5_front_volume(transient_path, target_frames=None)
+        gray = vol.sum(axis=2)
+        avg = _gray_to_rgb(_normalize_scalar_image(gray)).astype(np.float32)
+    elif transient_type == "mat":
         vol = _load_mat_volume(transient_path)
         gray = vol.mean(axis=2)
         avg = _gray_to_rgb(gray).astype(np.float32)
@@ -147,7 +177,9 @@ def get_transient_volume_for_ui(
     log_scale: bool = False,
 ) -> dict:
     """Build a lightweight 3D transient volume and robust display ranges for UI controls."""
-    if transient_type == "mat":
+    if transient_type == "h5":
+        vol = _load_h5_front_volume(transient_path, target_frames=target_frames)
+    elif transient_type == "mat":
         vol = _load_mat_volume(transient_path)
     else:
         with Image.open(transient_path) as img:
@@ -224,6 +256,65 @@ def resolve_reconstruction_outputs(scene_dir: Path) -> dict:
         "render_3d": str(volume) if volume.exists() else None,
         "mode": "demo",
     }
+
+
+def _discover_preprocessed_dataset(root: Path) -> list[dict]:
+    """Expose precomputed scenes without requiring their source HDF5 files."""
+    preprocessed_root = root / PREPROCESSED_DIRNAME
+    artifact_dirs = (
+        sorted(
+            (path for path in preprocessed_root.glob("scene_*") if path.is_dir()),
+            key=lambda path: _natural_sort_key(path.name),
+        )
+        if preprocessed_root.exists()
+        else []
+    )
+    if not artifact_dirs:
+        return []
+
+    labels = [H5_LABELS.get(path.name, path.name.replace("_", " ")) for path in artifact_dirs]
+    scenes = []
+    for artifact_dir, label in zip(artifact_dirs, labels):
+        transient_gifs = {
+            "Fácil": artifact_dir / "transient_facil.gif",
+            "Medio": artifact_dir / "transient.gif",
+            "Difícil": artifact_dir / "transient_dificil.gif",
+        }
+        transient_gif = transient_gifs["Medio"]
+        integrated_image = artifact_dir / "integrated.png"
+        integrated_rgb_image = artifact_dir / "integrated_rgb.png"
+        if not transient_gif.exists():
+            # A scene is playable only when its main precomputed animation exists.
+            continue
+        scenes.append(
+            {
+                "id": artifact_dir.name,
+                "scene_dir": str(artifact_dir),
+                "transient_path": str(transient_gif),
+                "transient_gifs": {
+                    level: str(gif_path)
+                    for level, gif_path in transient_gifs.items()
+                    if gif_path.exists()
+                },
+                "transient_type": "precomputed_gif",
+                "view_index": FRONT_VIEW_INDEX,
+                "label": label,
+                "choices": labels,
+                "difficulty": 3,
+                "hint": "observa la distribución temporal de la energía",
+                "notes": f"Medición HDF5, vista frontal {FRONT_VIEW_INDEX}.",
+                "recon_gif": None,
+                "recon_final": None,
+                "render_3d": None,
+                "integrated_image": str(integrated_image) if integrated_image.exists() else None,
+                "integrated_rgb_image": str(integrated_rgb_image) if integrated_rgb_image.exists() else None,
+            }
+        )
+    return scenes
+
+
+def _natural_sort_key(value: str) -> list[object]:
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", value)]
 
 
 def _discover_real_dataset(root: Path) -> list[dict]:
@@ -347,6 +438,59 @@ def _load_mat_volume(mat_path: Path) -> np.ndarray:
     if vol.ndim != 3:
         raise RuntimeError(f"{mat_path.name}: rect_data debe ser 3D")
     return vol
+
+
+def _load_h5_front_rgb_volume(h5_path: Path, target_frames: int | None = 300) -> np.ndarray:
+    """Load and temporally reduce the RGB transient from the frontal view."""
+    if h5py is None:
+        raise RuntimeError("Se necesita h5py para leer escenas HDF5")
+
+    with h5py.File(h5_path, "r") as data:
+        if "transients" not in data:
+            raise RuntimeError(f"{h5_path.name} no contiene 'transients'")
+        dataset = data["transients"]
+        if dataset.ndim != 5:
+            raise RuntimeError(f"{h5_path.name}: transients debe tener forma (vistas, alto, ancho, tiempo, canales)")
+        if FRONT_VIEW_INDEX >= dataset.shape[0]:
+            raise RuntimeError(f"{h5_path.name} no contiene la vista frontal {FRONT_VIEW_INDEX}")
+        # The source is chunked by complete view, so a single read is considerably
+        # faster than repeatedly decompressing it in temporal slices.
+        volume = np.asarray(dataset[FRONT_VIEW_INDEX], dtype=np.float32)
+
+    if target_frames is not None and volume.shape[2] > target_frames:
+        group = int(np.ceil(volume.shape[2] / target_frames))
+        usable = (volume.shape[2] // group) * group
+        # Sum, rather than average, so collapsing the reduced time axis still
+        # yields the physical temporal integral of the original measurement.
+        reduced = volume[:, :, :usable, :].reshape(
+            volume.shape[0], volume.shape[1], -1, group, volume.shape[3]
+        ).sum(axis=3)
+        if usable < volume.shape[2]:
+            tail = volume[:, :, usable:, :].sum(axis=2, keepdims=True)
+            reduced = np.concatenate((reduced, tail), axis=2)
+        volume = reduced
+    return volume
+
+
+def _load_h5_front_volume(h5_path: Path, target_frames: int | None = 300) -> np.ndarray:
+    """Load the frontal transient and collapse its RGB channels to intensity."""
+    rgb = _load_h5_front_rgb_volume(h5_path, target_frames=target_frames)
+    return rgb.mean(axis=-1, dtype=np.float32)
+
+
+def _normalize_scalar_image(gray: np.ndarray) -> np.ndarray:
+    lo, hi = np.percentile(gray, (1.0, 99.5))
+    if hi <= lo:
+        hi = lo + 1e-6
+    return np.clip((gray - lo) / (hi - lo), 0.0, 1.0)
+
+
+def _volume_to_frames(vol: np.ndarray) -> list[Image.Image]:
+    lo = float(np.percentile(vol, 1.0))
+    hi = float(np.percentile(vol, 99.5))
+    if hi <= lo:
+        hi = lo + 1e-6
+    return [render_inferno_image(vol[:, :, i], lo, hi) for i in range(vol.shape[2])]
 
 
 def _load_mat_transient_frames(mat_path: Path, target_frames: int = 300) -> list[Image.Image]:

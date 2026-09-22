@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import io
 import importlib.util
 import random
 from pathlib import Path
@@ -9,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 from PIL import Image
-from scipy.ndimage import gaussian_filter
 
 from utils.io import (
     discover_game_scenes,
@@ -26,8 +23,6 @@ DATA_DIR = BASE_DIR / "data"
 REAL_SCENES_DIR = DATA_DIR / "scenes"
 RECON_SCRIPT = BASE_DIR / "reconstruct.py"
 ILLUSTRATION_PATH = BASE_DIR / "illustration.png"
-HINT_BLUR_SIGMA = 50.0
-HINT_POISSON_SCALE = 50.0
 
 
 @st.cache_data
@@ -60,65 +55,6 @@ def cached_transient_volume(
         target_frames=300,
         log_scale=False,
     )
-
-
-@st.cache_data
-def cached_choice_images(data_dir: str) -> dict[str, str]:
-    """Return reference image path for each class option in the real dataset."""
-    blends = Path(data_dir) / "scenes" / "blends"
-    if not blends.exists():
-        return {}
-
-    pngs = {p.stem.lower(): str(p) for p in blends.glob("*.png")}
-    option_map = {
-        "bunny": ["bunny", "scene0"],
-        "mannequin": ["mannequin", "dummy"],
-        "su": ["su"],
-        "exit sign": ["exitsign", "exit_sign", "exit"],
-    }
-
-    resolved: dict[str, str] = {}
-    for label, keys in option_map.items():
-        for k in keys:
-            if k in pngs:
-                resolved[label] = pngs[k]
-                break
-    return resolved
-
-
-@st.cache_data
-def cached_poisson_hint_image(image_path: str) -> bytes:
-    arr = np.asarray(Image.open(image_path).convert("RGB"), dtype=np.float32) / 255.0
-    blurred = gaussian_filter(arr, sigma=(HINT_BLUR_SIGMA, HINT_BLUR_SIGMA, 0))
-
-    seed = sum((i + 1) * ord(ch) for i, ch in enumerate(image_path)) % (2**32)
-    rng = np.random.default_rng(seed)
-    noisy = rng.poisson(np.clip(blurred, 0.0, 1.0) * HINT_POISSON_SCALE).astype(np.float32) / HINT_POISSON_SCALE
-    noisy = np.clip(noisy, 0.0, 1.0)
-
-    out = io.BytesIO()
-    Image.fromarray((noisy * 255.0).astype(np.uint8), mode="RGB").save(out, format="PNG")
-    return out.getvalue()
-
-
-@st.cache_data
-def cached_image_data_uri(image_path: str) -> str:
-    path = Path(image_path)
-    mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime};base64,{encoded}"
-
-
-def resolve_hint_image_path(scene: dict, choice_images: dict[str, str]) -> str | None:
-    label_path = choice_images.get(str(scene.get("label", "")).lower())
-    if label_path:
-        return label_path
-
-    recon_final = scene.get("recon_final")
-    if recon_final and Path(recon_final).exists():
-        return recon_final
-
-    return None
 
 
 @st.cache_data
@@ -161,6 +97,8 @@ def init_state() -> None:
         "last_points": 0,
         "locked_guess": None,
         "locked_correct": None,
+        "scene_queue": [],
+        "last_scene": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -257,15 +195,50 @@ def render_start_screen() -> None:
         st.rerun()
 
 
-def pick_new_scene(scene_pool: list[str]) -> None:
+def draw_scene_without_repeats(
+    scene_pool: list[str],
+    scene_queue: list[str],
+    last_scene: str | None,
+) -> tuple[str | None, list[str]]:
+    """Draw from a shuffled bag so every available scene appears once per cycle."""
     if not scene_pool:
+        return None, []
+
+    available = set(scene_pool)
+    queue = [scene_id for scene_id in scene_queue if scene_id in available]
+    if not queue:
+        queue = list(scene_pool)
+        random.shuffle(queue)
+        # Avoid an immediate repeat at the boundary between two complete cycles.
+        if len(queue) > 1 and queue[-1] == last_scene:
+            queue[0], queue[-1] = queue[-1], queue[0]
+
+    return queue.pop(), queue
+
+
+def pick_new_scene(scene_pool: list[str]) -> None:
+    queue = list(st.session_state.scene_queue)
+    last_scene = st.session_state.last_scene
+    # When upgrading an already-running session, count the scene currently on
+    # screen as the first draw of the new cycle.
+    if not queue and last_scene is None and st.session_state.current_scene in scene_pool:
+        last_scene = st.session_state.current_scene
+        queue = [scene_id for scene_id in scene_pool if scene_id != last_scene]
+        random.shuffle(queue)
+
+    selected, remaining = draw_scene_without_repeats(
+        scene_pool,
+        queue,
+        last_scene,
+    )
+    if selected is None:
         st.session_state.current_scene = None
+        st.session_state.scene_queue = []
         return
 
-    previous = st.session_state.current_scene
-    candidates = [s for s in scene_pool if s != previous] or scene_pool
-
-    st.session_state.current_scene = random.choice(candidates)
+    st.session_state.current_scene = selected
+    st.session_state.scene_queue = remaining
+    st.session_state.last_scene = selected
     st.session_state.revealed = False
     st.session_state.recon_outputs = None
     st.session_state.last_points = 0
@@ -275,10 +248,21 @@ def pick_new_scene(scene_pool: list[str]) -> None:
 
 def run_reconstruction(scene: dict, mode: str) -> dict:
     if mode == "DEMO":
+        integrated_image = scene.get("integrated_image")
+        integrated_rgb_image = scene.get("integrated_rgb_image")
+        if scene.get("transient_type") == "h5":
+            ui_data = cached_transient_volume(scene["transient_path"], "h5")
+            integrated_image = render_inferno_image(
+                ui_data["integrated"],
+                float(ui_data["integrated_lo"]),
+                float(ui_data["integrated_hi"]),
+            )
         return {
             "recon_gif": scene.get("recon_gif"),
             "recon_final": scene.get("recon_final"),
             "render_3d": scene.get("render_3d"),
+            "integrated_image": integrated_image,
+            "integrated_rgb_image": integrated_rgb_image,
             "mode": "demo",
         }
 
@@ -369,163 +353,101 @@ def main() -> None:
         st.subheader("Marcador")
         render_score_panel()
 
-    col_left, col_right = st.columns(2)
-    choice_images = cached_choice_images(str(DATA_DIR))
+    st.subheader("Medición transitoria")
+    level = st.selectbox(
+        "Nivel",
+        options=["Fácil", "Medio", "Difícil"],
+        index=1,
+        key=f"level_{scene_id}",
+    )
 
-    with col_left:
-        st.subheader("Medición")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Nueva escena", use_container_width=True):
-                pick_new_scene(scene_ids)
-                st.rerun()
-        with c2:
-            if st.session_state.revealed and st.button("Siguiente", use_container_width=True):
-                st.session_state.round_idx += 1
-                pick_new_scene(scene_ids)
-                st.rerun()
-
-        if scene["transient_type"] == "mat":
-            ui_data = cached_transient_volume(
-                scene["transient_path"],
-                scene["transient_type"],
-            )
-            vol = ui_data["volume"]
-            h, w, t_total = int(vol.shape[0]), int(vol.shape[1]), int(vol.shape[2])
-            display_size = 512
-            img_width = display_size
-            img_height = display_size
-            gif_upscale = max(1, int(np.ceil(display_size / max(w, 1))))
-
-            t_idx = st.slider("Frame temporal", min_value=0, max_value=t_total - 1, value=t_total // 2, step=1)
-            frame_img = render_inferno_image(vol[:, :, t_idx], float(ui_data["lo"]), float(ui_data["hi"]))
-            integrated_img = render_inferno_image(
-                ui_data["integrated"],
-                float(ui_data["integrated_lo"]),
-                float(ui_data["integrated_hi"]),
-            )
-            frame_img = frame_img.resize((img_width, img_height), resample=Image.Resampling.NEAREST)
-            integrated_img = integrated_img.resize((img_width, img_height), resample=Image.Resampling.NEAREST)
-
-            tab_anim, tab_frame, tab_sum = st.tabs(["Animación", "Frame temporal", "Suma temporal"])
-            with tab_anim:
-                st.image(
-                    cached_transient(scene["transient_path"], scene["transient_type"], gif_upscale),
-                    caption="Transient NLOS (barrido temporal)",
-                    width=img_width,
-                )
-            with tab_frame:
-                st.image(
-                    frame_img,
-                    caption=f"Frame temporal t={t_idx}/{t_total - 1} | resolución {w}x{h}",
-                    width=img_width,
-                )
-            with tab_sum:
-                st.image(
-                    integrated_img,
-                    caption=f"Suma temporal de energía | resolución {w}x{h}",
-                    width=img_width,
-                )
-        else:
-            st.image(
-                cached_transient(scene["transient_path"], scene["transient_type"], 1),
-                caption="Transient NLOS",
-                use_container_width=True,
-            )
-
-        st.caption("Opciones de objeto")
-        c1, c2 = st.columns(2)
-        for i, label in enumerate(meta["choices"]):
-            target_col = c1 if i % 2 == 0 else c2
-            with target_col:
-                img_path = choice_images.get(label.lower())
-                if img_path:
-                    st.image(img_path, caption=label, use_container_width=True)
-                else:
-                    st.caption(label)
-
-        hint_image_path = resolve_hint_image_path(scene, choice_images)
-        show_visual_hint = st.checkbox(
-            "Mostrar pista visual",
-            value=False,
-            key=f"visual_hint_{scene_id}_{st.session_state.round_idx}",
-            help=(
-                "Muestra la imagen de referencia degradada con blur_sigma=100 "
-                "y poisson_scale=100."
-            ),
+    if scene["transient_type"] == "precomputed_gif":
+        transient_path = scene.get("transient_gifs", {}).get(level, scene["transient_path"])
+        st.image(
+            transient_path,
+            caption=f"Transient NLOS · nivel {level.lower()}",
+            use_container_width=True,
         )
-        if show_visual_hint:
-            if hint_image_path:
+    elif scene["transient_type"] in {"mat", "h5"}:
+        st.image(
+            cached_transient(scene["transient_path"], scene["transient_type"], 1),
+            caption="Transient NLOS",
+            use_container_width=True,
+        )
+    else:
+        st.image(scene["transient_path"], caption="Transient NLOS", use_container_width=True)
+
+    guess = st.radio(
+        "Tu predicción",
+        options=meta["choices"],
+        index=0,
+        key=f"guess_{scene_id}_{st.session_state.round_idx}",
+        horizontal=True,
+    )
+
+    reconstruct_clicked = st.button("Reconstruct", type="primary", use_container_width=True)
+    if reconstruct_clicked:
+        st.session_state.recon_outputs = run_reconstruction(scene, "DEMO")
+        if not st.session_state.revealed:
+            correct = guess == meta["label"]
+            st.session_state.locked_guess = guess
+            st.session_state.locked_correct = correct
+            score = compute_round_score(correct=correct)
+            st.session_state.last_points = score["points"]
+            st.session_state.total_score += score["points"]
+            st.session_state.history.append(
+                {
+                    "round": st.session_state.round_idx,
+                    "scene": scene_id,
+                    "guess": guess,
+                    "correct_label": meta["label"],
+                    "correct": correct,
+                    "points": score["points"],
+                    "level": level,
+                }
+            )
+            st.session_state.revealed = True
+
+    outputs = st.session_state.recon_outputs
+    if outputs:
+        st.subheader("Reconstrucción")
+        rgb_col, intensity_col = st.columns(2)
+        with rgb_col:
+            if outputs.get("integrated_rgb_image"):
                 st.image(
-                    cached_poisson_hint_image(hint_image_path),
-                    caption=(
-                        f"Pista visual | blur_sigma={int(HINT_BLUR_SIGMA)} | "
-                        f"poisson_scale={int(HINT_POISSON_SCALE)}"
-                    ),
+                    outputs["integrated_rgb_image"],
+                    caption="Reconstrucción RGB colapsada en el tiempo",
                     use_container_width=True,
                 )
-            else:
-                st.caption("No hay imagen disponible para generar la pista visual.")
-
-        guess = st.radio(
-            "Tu predicción",
-            options=meta["choices"],
-            index=0,
-            key=f"guess_{scene_id}_{st.session_state.round_idx}",
-        )
-
-        st.caption(f"Dificultad: {meta.get('difficulty', 1)}")
-
-    with col_right:
-        st.subheader("Reconstrucción")
-        reconstruct_clicked = st.button("Reconstruct", type="primary", use_container_width=True)
-
-        if reconstruct_clicked:
-            st.session_state.recon_outputs = run_reconstruction(scene, "DEMO")
-
-            if not st.session_state.revealed:
-                correct = guess == meta["label"]
-                st.session_state.locked_guess = guess
-                st.session_state.locked_correct = correct
-                score = compute_round_score(correct=correct)
-                st.session_state.last_points = score["points"]
-                st.session_state.total_score += score["points"]
-                st.session_state.history.append(
-                    {
-                        "round": st.session_state.round_idx,
-                        "scene": scene_id,
-                        "guess": guess,
-                        "correct_label": meta["label"],
-                        "correct": correct,
-                        "points": score["points"],
-                    }
+        with intensity_col:
+            if outputs.get("integrated_image"):
+                st.image(
+                    outputs["integrated_image"],
+                    caption="Intensidad colapsada en el tiempo",
+                    use_container_width=True,
                 )
-                st.session_state.revealed = True
 
-        outputs = st.session_state.recon_outputs
-        if outputs:
-            if outputs.get("recon_gif"):
-                st.image(outputs["recon_gif"], caption=f"Animación de reconstrucción ({outputs.get('mode', 'demo')})", use_container_width=True)
+    if st.session_state.revealed:
+        correct = bool(st.session_state.locked_correct)
+        locked_guess = st.session_state.locked_guess
+        if correct:
+            st.success(
+                f"Correcto: {meta['label']} (tu respuesta: {locked_guess}) | "
+                f"+{st.session_state.last_points} puntos"
+            )
+        else:
+            st.error(
+                f"Respuesta correcta: {meta['label']} (tu respuesta: {locked_guess}) | "
+                f"{st.session_state.last_points} puntos"
+            )
+        st.caption(meta.get("notes", ""))
 
-            if outputs.get("render_3d"):
-                st.image(outputs["render_3d"], caption="Render 3D", use_container_width=True)
-
+    st.divider()
+    if st.button("Nueva escena", use_container_width=True):
         if st.session_state.revealed:
-            correct = bool(st.session_state.locked_correct)
-            locked_guess = st.session_state.locked_guess
-            if correct:
-                st.success(
-                    f"Correcto: {meta['label']} (tu respuesta: {locked_guess}) | "
-                    f"+{st.session_state.last_points} puntos"
-                )
-            else:
-                st.error(
-                    f"Respuesta correcta: {meta['label']} (tu respuesta: {locked_guess}) | "
-                    f"{st.session_state.last_points} puntos"
-                )
-
-            st.caption(meta.get("notes", ""))
+            st.session_state.round_idx += 1
+        pick_new_scene(scene_ids)
+        st.rerun()
 
 
 if __name__ == "__main__":

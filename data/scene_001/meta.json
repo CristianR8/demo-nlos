@@ -1,0 +1,12 @@
+{
+  "label": "bunny",
+  "choices": [
+    "bunny",
+    "sphere",
+    "chair",
+    "teapot"
+  ],
+  "difficulty": 2,
+  "hint": "tiene orejas",
+  "notes": "scene sintetica mitsuba"
+}

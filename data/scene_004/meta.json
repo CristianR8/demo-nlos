@@ -1,0 +1,12 @@
+{
+  "label": "teapot",
+  "choices": [
+    "bunny",
+    "sphere",
+    "chair",
+    "teapot"
+  ],
+  "difficulty": 2,
+  "hint": "objeto de cocina",
+  "notes": "scene sintetica mitsuba"
+}
