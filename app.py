@@ -47,11 +47,7 @@ def _public_scene(scene: dict) -> dict:
         "choices": choices,
         "difficulty": scene.get("difficulty", 1),
         "hint": scene.get("hint", "Observa el patrón de energía"),
-        "transients": {
-            "Fácil": _media_url(transient_gifs.get("Fácil") or scene["transient_path"]),
-            "Medio": _media_url(transient_gifs.get("Medio") or scene["transient_path"]),
-            "Difícil": _media_url(transient_gifs.get("Difícil") or scene["transient_path"]),
-        },
+        "transient": _media_url(transient_gifs.get("Difícil") or scene["transient_path"]),
     }
 
 

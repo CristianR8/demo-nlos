@@ -19,11 +19,11 @@
         <div class="hero-copy">
           <p class="eyebrow">RECONOCIMIENTO DE IMÁGENES TRANSITORIAS</p>
           <h1>Identifica<br><em>la imagen.</em></h1>
-          <p class="hero-text">Observa cada secuencia transitoria, analiza cómo cambia la imagen con el tiempo y selecciona el objeto correcto.</p>
+          <p class="hero-text">Abre la mano frente a la cámara para revelar la secuencia transitoria rápida. Analiza la imagen y selecciona el objeto correcto.</p>
           <button id="start-button" class="primary-button">Iniciar juego <span>→</span></button>
           <div class="hero-stats">
             <div><strong>05</strong><span>rondas</span></div>
-            <div><strong>03</strong><span>niveles</span></div>
+            <div><strong>01</strong><span>modo difícil</span></div>
             <div><strong>100</strong><span>pts / acierto</span></div>
           </div>
         </div>
@@ -47,16 +47,13 @@
           <div class="scanner-frame">
             <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
             <div class="scan-line"></div>
-            <img id="transient-image" alt="Animación de la imagen transitoria">
+            <img id="transient-image" class="hidden" alt="Animación de la imagen transitoria">
+            <div id="hand-prompt" class="hand-prompt">Abre la mano frente a la cámara para ver la medición.</div>
             <div class="axis axis-y">INTENSIDAD</div><div class="axis axis-x">TIEMPO DE VUELO →</div>
-            <button id="reload-gif" class="icon-button" title="Reiniciar animación" aria-label="Reiniciar animación">↻</button>
           </div>
           <div class="scanner-footer">
             <div class="signal-data"><span>FORMATO</span><b>SECUENCIA GIF</b></div>
-            <div class="signal-data"><span>ESTADO</span><b class="cyan">REPRODUCIENDO</b></div>
-            <div class="difficulty" role="group" aria-label="Nivel de dificultad">
-              <button data-level="Fácil">Fácil</button><button data-level="Medio" class="active">Medio</button><button data-level="Difícil">Difícil</button>
-            </div>
+            <div class="signal-data"><span>MODO</span><b class="cyan">DIFÍCIL · RÁPIDO</b></div>
           </div>
         </section>
 
@@ -66,6 +63,15 @@
           <h2>¿Qué objeto aparece?</h2>
           <p class="answer-help">Observa cómo cambia la imagen en el tiempo y elige una opción.</p>
           <div id="choices" class="choices"></div>
+          <div class="camera-control">
+            <div class="camera-heading"><span>VISTA DE LA CÁMARA</span><span id="camera-status" role="status">Cámara pendiente</span></div>
+            <div id="camera-frame" class="camera-frame">
+              <video id="camera-preview" autoplay muted playsinline aria-label="Vista previa de la cámara"></video>
+              <canvas id="hand-overlay" aria-hidden="true"></canvas>
+              <span id="gesture-badge" class="gesture-badge">Sin mano detectada</span>
+            </div>
+            <button id="retry-camera" class="hidden" type="button">Activar cámara</button>
+          </div>
           <button id="submit-answer" class="primary-button submit-button" disabled>Confirmar respuesta <span>⌁</span></button>
           <button id="hint-button" class="hint-button"><span>✦</span> Solicitar pista</button>
           <p id="hint-text" class="hint-text hidden"></p>

@@ -56,6 +56,7 @@ button { color: inherit; }
 .scanner-frame { position: relative; height: min(65vh, 680px); min-height: 400px; padding: 2rem 3.5rem 3rem; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--line); background: linear-gradient(rgba(63,224,220,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(63,224,220,.025) 1px, transparent 1px), #050c10; background-size: 28px 28px; }
 .scanner-frame::before { content: ""; position: absolute; inset: 12%; background: var(--cyan); opacity: .06; filter: blur(90px); }
 .scanner-frame img { width: auto; height: 100%; max-width: 100%; max-height: 100%; position: relative; object-fit: contain; image-rendering: pixelated; filter: contrast(1.08) saturate(1.1); }
+.hand-prompt { position: relative; z-index: 1; max-width: 22rem; color: var(--cyan); text-align: center; font: 700 clamp(.8rem, 1.5vw, 1rem)/1.6 "Space Mono", monospace; }
 .corner { position: absolute; z-index: 2; width: 22px; height: 22px; border-color: var(--cyan); }
 .tl { left: 14px; top: 14px; border-left: 2px solid; border-top: 2px solid; }.tr { right: 14px; top: 14px; border-right: 2px solid; border-top: 2px solid; }.bl { left: 14px; bottom: 14px; border-left: 2px solid; border-bottom: 2px solid; }.br { right: 14px; bottom: 14px; border-right: 2px solid; border-bottom: 2px solid; }
 .scan-line { position: absolute; z-index: 3; left: 4%; right: 4%; top: 10%; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan), transparent); box-shadow: 0 0 15px var(--cyan); opacity: .35; animation: scanning 5s ease-in-out infinite; }
@@ -65,9 +66,18 @@ button { color: inherit; }
 .icon-button { position: absolute; z-index: 4; right: 1rem; bottom: 1rem; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; color: var(--cyan); background: rgba(7,17,23,.8); cursor: pointer; }
 .scanner-footer { min-height: 65px; padding: .8rem 1rem; display: flex; gap: 2rem; align-items: center; border: 1px solid var(--line); border-top: 0; }
 .signal-data span { display: block; color: var(--muted); font: .5rem "Space Mono", monospace; }.signal-data b { font: .65rem "Space Mono", monospace; }.cyan { color: var(--cyan); }
-.difficulty { margin-left: auto; display: flex; padding: 3px; border: 1px solid var(--line); background: #071116; }
-.difficulty button { border: 0; padding: .5rem .8rem; color: var(--muted); background: transparent; font: .6rem "Space Mono", monospace; cursor: pointer; }
-.difficulty button.active { color: var(--ink); background: var(--cyan); }
+.camera-control { width: 100%; margin: 0 0 1.5rem; color: var(--muted); font: .6rem "Space Mono", monospace; }
+.camera-heading { margin-bottom: .5rem; display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+.camera-heading span:first-child { color: var(--cyan); }
+.camera-heading span:last-child { text-align: right; }
+.camera-frame { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line); background: #050c10; }
+.camera-frame.open-hand { border-color: var(--lime); box-shadow: 0 0 18px rgba(201, 243, 91, .18); }
+.camera-frame video, .camera-frame canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; transform: scaleX(-1); }
+.camera-frame video { object-fit: cover; }
+.camera-frame canvas { pointer-events: none; }
+.gesture-badge { position: absolute; right: .6rem; bottom: .6rem; padding: .35rem .5rem; border: 1px solid var(--line); color: var(--cream); background: rgba(7, 17, 23, .8); font: 700 .58rem "Space Mono", monospace; }
+.camera-frame.open-hand .gesture-badge { border-color: var(--lime); color: var(--lime); }
+.camera-control button { display: block; margin-top: .5rem; padding: 0; border: 0; color: var(--cyan); background: none; font: inherit; text-decoration: underline; cursor: pointer; }
 
 .answer-panel { padding: clamp(2rem, 4vw, 4rem) clamp(1.5rem, 3vw, 3rem); border-left: 1px solid var(--line); background: rgba(11, 25, 32, .72); }
 .round-chip { float: right; padding: .45rem .65rem; border: 1px solid var(--line); color: var(--muted); font: .55rem "Space Mono", monospace; }.round-chip strong { color: var(--lime); }
@@ -102,5 +112,5 @@ button { color: inherit; }
   .hero-grid { grid-template-columns: 1fr; padding-top: 6rem; }.game-header { grid-template-columns: 1fr auto auto; gap: 1rem; }.mission-progress { display: none; }.game-layout { grid-template-columns: 1fr; }.answer-panel { border-left: 0; border-top: 1px solid var(--line); }.scanner-frame { min-height: 360px; height: 55vh; }
 }
 @media (max-width: 560px) {
-  .start-screen { padding: 1.2rem; }.brand-pill { top: 1.2rem; }.hero-copy h1 { font-size: 4rem; }.hero-stats { gap: 1rem; justify-content: space-between; }.game-header { height: 72px; }.logo small, .hud-stat span { display: none; }.hud-stat { padding-left: .7rem; }.scanner-panel { padding: 1rem; }.scanner-frame { min-height: 300px; padding: 2rem; }.scanner-frame img { width: 100%; height: auto; }.scanner-footer { flex-wrap: wrap; gap: .8rem; }.difficulty { width: 100%; margin: 0; }.difficulty button { flex: 1; }.reconstruction-grid { grid-template-columns: 1fr; }
+  .start-screen { padding: 1.2rem; }.brand-pill { top: 1.2rem; }.hero-copy h1 { font-size: 4rem; }.hero-stats { gap: 1rem; justify-content: space-between; }.game-header { height: 72px; }.logo small, .hud-stat span { display: none; }.hud-stat { padding-left: .7rem; }.scanner-panel { padding: 1rem; }.scanner-frame { min-height: 300px; padding: 2rem; }.scanner-frame img { width: 100%; height: auto; }.scanner-footer { flex-wrap: wrap; gap: .8rem; }.reconstruction-grid { grid-template-columns: 1fr; }
 }
